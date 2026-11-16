@@ -1,0 +1,1499 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="light dark" />
+<title>RoomWatch — 교실 무선기기 모니터</title>
+<script>
+  try {
+    if (localStorage.getItem("roomwatch-theme") === "dark") {
+      document.documentElement.classList.add("dark");
+    }
+  } catch (_) {}
+</script>
+<!-- Required by the project spec. The dashboard is styled inline, so the CDN
+     being unreachable in an offline exam room does not affect the layout. -->
+<script
+  src="https://cdn.tailwindcss.com"
+  async
+  onload="if (window.tailwind) { tailwind.config = { corePlugins: { preflight: false }, darkMode: 'class' }; }"
+></script>
+<style>
+  :root {
+    --bg: #ffffff;
+    --canvas: #f6f8fa;
+    --surface: #f6f8fa;
+    --surface-2: #eef1f4;
+    --text: #1f2328;
+    --muted: #59636e;
+    --border: #d0d7de;
+    --border-strong: #8c959f;
+    --critical: #cf222e;
+    --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    color-scheme: light;
+  }
+  html.dark {
+    --bg: #0d1117;
+    --canvas: #0d1117;
+    --surface: #161b22;
+    --surface-2: #21262d;
+    --text: #e6edf3;
+    --muted: #8d96a0;
+    --border: #30363d;
+    --border-strong: #6e7681;
+    --critical: #cf222e;
+    color-scheme: dark;
+  }
+  *, *::before, *::after {
+    box-sizing: border-box;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    transition: none !important;
+  }
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: var(--canvas);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: keep-all;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { text-wrap: balance; }
+  .notice-text, .event-message, .detail-value, .empty-state { overflow-wrap: break-word; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; background: none; border: 0; padding: 0; }
+  button:disabled { cursor: not-allowed; opacity: .45; }
+  ::selection { background: var(--text); color: var(--bg); }
+  * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+  *::-webkit-scrollbar { width: 9px; height: 9px; }
+  *::-webkit-scrollbar-thumb { background: var(--border); border: 1px solid var(--bg); }
+  *::-webkit-scrollbar-track { background: transparent; }
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
+  .hidden { display: none !important; }
+  .critical { color: var(--critical); }
+
+  .app {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 1680px;
+    height: 100dvh;
+    min-height: 620px;
+    margin: 0 auto;
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+
+  /* toolbar */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    min-height: 54px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .brand { margin-right: auto; min-width: 0; }
+  .brand-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1.3;
+  }
+  .brand-sub {
+    margin-top: 1px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    padding: 4px 9px;
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { background: var(--surface); }
+  .btn-quiet { border-color: transparent; color: var(--muted); }
+  .btn-quiet:hover:not(:disabled) { border-color: var(--border); color: var(--text); background: var(--bg); }
+
+  /* status line */
+  .statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 18px;
+    flex-wrap: wrap;
+    min-height: 30px;
+    padding: 4px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .status-group {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .status-group.right { justify-content: flex-end; gap: 12px; }
+  .status-item { white-space: nowrap; }
+  .status-item.critical { color: var(--critical); }
+  .status-item .mono { font-size: 10px; }
+  .action-note {
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+  }
+  .action-note:empty { display: none; }
+
+  /* notice */
+  .notice {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+  .notice-label { color: var(--text); font-weight: 500; flex: 0 0 auto; }
+  .notice-text { min-width: 0; overflow-wrap: anywhere; }
+
+  /* split view */
+  .workspace {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(360px, 1fr);
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--bg);
+  }
+  .panel + .panel { border-left: 1px solid var(--border); }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 14px;
+    flex-wrap: wrap;
+    min-height: 36px;
+    padding: 4px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-title {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .count {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+  .panel-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .tabs { display: flex; align-items: center; gap: 11px; }
+  .tab {
+    padding: 4px 0;
+    border-bottom: 1px solid transparent;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--text); border-bottom-color: var(--text); font-weight: 500; }
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+  input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 11px;
+    height: 11px;
+    margin: 0;
+    border: 1px solid var(--border-strong);
+    background: var(--bg);
+    cursor: pointer;
+  }
+  input[type="checkbox"]:checked { background: var(--text); border-color: var(--text); }
+  .text-btn {
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .text-btn:hover { color: var(--text); }
+
+  /* table */
+  .table-wrap { flex: 1; min-height: 0; overflow: auto; }
+  table {
+    width: 100%;
+    min-width: 780px;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 12px;
+  }
+  thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    text-align: left;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    overflow: hidden;
+  }
+  tbody tr.device-row { cursor: pointer; }
+  tbody tr.device-row:hover { background: var(--surface); }
+  .status-cell { font-size: 11px; font-weight: 500; white-space: nowrap; }
+  .status-cell.critical { color: var(--critical); }
+  .status-cell.suspicious, .status-cell.watch { color: var(--text); }
+  .status-cell.allowed, .status-cell.clear { color: var(--muted); }
+  .status-note {
+    display: block;
+    margin-top: 1px;
+    font-size: 9px;
+    font-weight: 400;
+    color: var(--muted);
+  }
+  .mobile-meta { display: none; }
+  .device-name {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .test-label { font-size: 9px; font-weight: 400; color: var(--muted); }
+  .device-sub {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    min-width: 0;
+    margin-top: 1px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+  }
+  .device-id-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .copy-link {
+    flex: 0 0 auto;
+    font-family: var(--sans);
+    font-size: 9px;
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .copy-link:hover { color: var(--text); }
+  .type { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .cell-main {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cell-main.sans { font-family: var(--sans); font-size: 11px; }
+  .cell-sub {
+    display: block;
+    margin-top: 1px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .unit { font-size: 9px; color: var(--muted); }
+  .score { font-family: var(--mono); font-size: 12px; font-weight: 500; }
+  .score.critical { color: var(--critical); }
+  .score-sub { display: block; margin-top: 1px; font-size: 9px; color: var(--muted); }
+
+  /* expanded row */
+  .detail-row > td { padding: 0 !important; background: var(--surface); }
+  .detail {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px 24px;
+    padding: 12px 14px;
+  }
+  .detail-label { margin-bottom: 2px; font-size: 10px; color: var(--muted); }
+  .detail-value { font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+  .detail-value.mono { font-family: var(--mono); font-size: 10px; }
+  .detail-list { margin: 0; padding: 0; list-style: none; }
+  .detail-list li { margin: 0 0 1px; }
+  .detail-actions { margin-top: 4px; }
+  .detail .copy-link { font-size: 10px; }
+
+  /* activity */
+  .activity-list { flex: 1; min-height: 0; overflow: auto; }
+  .event {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 8px;
+    padding: 6px 12px;
+    border-left: 1px solid transparent;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .event.critical { border-left-color: var(--critical); }
+  .event-time {
+    padding-top: 1px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .event-body { min-width: 0; }
+  .event-line { overflow-wrap: anywhere; }
+  .event-level { font-size: 9px; color: var(--muted); }
+  .event-level.critical { color: var(--critical); }
+  .event-source {
+    margin-left: 5px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+  }
+  .event-message { margin-left: 5px; font-size: 11px; color: var(--text); }
+  .event-detail {
+    margin-top: 1px;
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted);
+    overflow-wrap: anywhere;
+  }
+
+  .empty-state {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    min-height: 140px;
+    padding: 24px;
+    color: var(--muted);
+    font-size: 12px;
+    text-align: center;
+  }
+
+  /* help */
+  dialog {
+    width: min(680px, calc(100vw - 32px));
+    max-height: 82vh;
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    overflow: auto;
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.28); }
+  .dialog-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .dialog-head h2 { margin: 0; font-size: 13px; font-weight: 600; }
+  .dialog-body { padding: 4px 16px 16px; }
+  .dialog-body section { padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .dialog-body section:last-of-type { border-bottom: 0; }
+  .dialog-body h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; }
+  .dialog-body p { margin: 0 0 6px; font-size: 12px; line-height: 1.65; color: var(--text); }
+  .dialog-body code { font-family: var(--mono); font-size: 10px; }
+  .dialog-body p:last-child { margin-bottom: 0; }
+  .dialog-body strong { font-weight: 600; }
+  .dialog-note { margin: 4px 0 0 !important; font-size: 11px !important; color: var(--muted) !important; }
+  .dialog-foot {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  /* footer */
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 18px;
+    flex-wrap: wrap;
+    min-height: 28px;
+    padding: 4px 14px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .footer .mono { font-size: 9px; }
+  .footer-right { margin-left: auto; white-space: nowrap; }
+
+  @media (max-width: 1000px) {
+    .app { height: auto; min-height: 100dvh; }
+    .workspace { flex: none; grid-template-columns: 1fr; overflow: visible; }
+    .panel + .panel { border-left: 0; border-top: 1px solid var(--border); }
+    .devices-panel { height: 470px; }
+    .activity-panel { height: 410px; }
+  }
+  @media (max-width: 700px) {
+    .app { border-left: 0; border-right: 0; }
+    table { min-width: 0; table-layout: auto; }
+    table colgroup col:nth-child(n+3) { display: none; }
+    thead th:nth-child(n+3), tbody td:nth-child(n+3) { display: none; }
+    .mobile-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 2px 9px;
+      margin-top: 4px;
+      font-family: var(--sans);
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .mobile-meta .score { font-family: var(--mono); font-size: 11px; }
+    .topbar { align-items: flex-start; padding: 8px 10px; }
+    .toolbar-actions { width: 100%; }
+    .btn { flex: 1 1 auto; }
+    .statusbar { padding: 5px 10px; }
+    .status-group { gap: 5px 12px; }
+    .status-group.right { width: 100%; justify-content: flex-start; }
+    #clock { display: none; }
+    .notice { padding: 6px 10px; }
+    .panel-head { padding: 4px 10px; }
+    .panel-actions { gap: 8px; }
+    .tabs { gap: 9px; }
+    .detail { grid-template-columns: 1fr; gap: 8px; padding: 10px; }
+    .devices-panel { height: 450px; }
+    .activity-panel { height: 380px; }
+    .footer { padding: 5px 10px; }
+    .event { grid-template-columns: 66px minmax(0, 1fr); padding: 5px 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <h1 class="brand-title">RoomWatch</h1>
+      <div class="brand-sub">교실 무선기기 모니터</div>
+    </div>
+    <div class="toolbar-actions">
+      <button class="btn" id="btn-reset" type="button">초기화</button>
+      <button class="btn btn-quiet" id="btn-help" type="button">도움말</button>
+      <button class="btn btn-quiet" id="theme-btn" type="button" aria-label="화면 밝기 전환">어둡게</button>
+    </div>
+  </header>
+
+  <div class="statusbar" role="status" aria-live="polite">
+    <div class="status-group">
+      <span class="status-item" id="link-text">연결 중</span>
+      <span class="status-item" id="status-ble">블루투스 준비 중</span>
+      <span class="status-item" id="status-wifi">와이파이 준비 중</span>
+      <span class="status-item" id="status-devices">확인 대상 0대</span>
+      <span class="status-item" id="status-allowed">허용 0대</span>
+      <span class="status-item" id="status-critical">위험 0대</span>
+      <span class="status-item hidden" id="status-sim">테스트 화면</span>
+    </div>
+    <div class="status-group right">
+      <span class="status-item action-note" id="action-note"></span>
+      <span class="status-item mono" id="clock">--:--:--</span>
+    </div>
+  </div>
+
+  <div class="notice hidden" id="notice" role="status" aria-live="polite">
+    <span class="notice-label">알림</span>
+    <span class="notice-text" id="notice-text"></span>
+  </div>
+
+  <main class="workspace">
+    <section class="panel devices-panel" aria-label="감지된 기기">
+      <div class="panel-head">
+        <div class="panel-title">감지된 기기 <span class="count" id="device-count">0</span></div>
+        <div class="panel-actions">
+          <div class="tabs" role="group" aria-label="기기 필터">
+            <button class="tab active" type="button" data-filter="all" aria-pressed="true">전체</button>
+            <button class="tab" type="button" data-filter="ble" aria-pressed="false">블루투스</button>
+            <button class="tab" type="button" data-filter="wifi" aria-pressed="false">와이파이</button>
+            <button class="tab" type="button" data-filter="threats" aria-pressed="false">위험 신호</button>
+          </div>
+          <label class="check" title="감독관이 직접 허용한 기기를 함께 표시합니다">
+            <input type="checkbox" id="show-allowed" checked /> 허용된 기기 표시
+          </label>
+        </div>
+      </div>
+      <div class="table-wrap hidden" id="device-table-wrap">
+        <table>
+          <colgroup>
+            <col style="width:86px" />
+            <col />
+            <col style="width:64px" />
+            <col style="width:112px" />
+            <col style="width:88px" />
+            <col style="width:84px" />
+            <col style="width:64px" />
+            <col style="width:80px" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col" title="위험, 의심, 관찰, 확인 필요, 허용됨">상태</th>
+              <th scope="col">기기</th>
+              <th scope="col">종류</th>
+              <th scope="col">제조사</th>
+              <th scope="col" title="dBm 값이 0에 가까울수록 강한 신호입니다">신호</th>
+              <th scope="col" title="신호 세기로 계산한 어림 거리입니다">거리</th>
+              <th scope="col" title="75점 이상이면 위험, 45점 이상이면 의심, 20점 이상이면 관찰">점수</th>
+              <th scope="col" title="마지막으로 신호를 받은 시각">최근</th>
+            </tr>
+          </thead>
+          <tbody id="device-rows"></tbody>
+        </table>
+      </div>
+      <div class="empty-state" id="device-empty">아직 감지된 기기가 없습니다.</div>
+    </section>
+
+    <section class="panel activity-panel" aria-label="활동 기록">
+      <div class="panel-head">
+        <div class="panel-title">활동 기록 <span class="count" id="event-count">0</span></div>
+        <div class="panel-actions">
+          <label class="check" title="기술적인 원시 값을 함께 표시합니다">
+            <input type="checkbox" id="show-raw" /> 자세히
+          </label>
+          <button class="text-btn" id="btn-clear-view" type="button">지우기</button>
+        </div>
+      </div>
+      <div class="activity-list hidden" id="event-stream" aria-live="polite"></div>
+      <div class="empty-state" id="event-empty">아직 활동 기록이 없습니다.</div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>RoomWatch · 이 컴퓨터 안에서만 처리합니다. 무선 신호의 내용은 저장하지 않습니다.</span>
+    <span class="mono footer-right" id="footer-right">v1.0.0</span>
+  </footer>
+
+</div>
+
+<dialog id="help-dialog" aria-labelledby="help-title">
+  <div class="dialog-head">
+    <h2 id="help-title">RoomWatch 사용법</h2>
+    <button class="text-btn" id="btn-help-close" type="button">닫기</button>
+  </div>
+  <div class="dialog-body">
+    <section>
+      <h3>무엇을 보나요?</h3>
+      <p>교실 주변에서 나오는 블루투스와 와이파이 신호를 듣고, 시험 중 사용하면 안 되는 스마트 안경이나 소형 웨어러블이 있는지 살펴봅니다. 기기에 연결하거나 신호를 보내지 않고 듣기만 합니다.</p>
+    </section>
+    <section>
+      <h3>상태와 점수</h3>
+      <p><strong>위험</strong>은 75점 이상으로, 목록 맨 위에 고정됩니다. <strong>의심</strong>은 45~74점, <strong>관찰</strong>은 20~44점, <strong>확인 필요</strong>는 20점 미만입니다. <strong>허용됨</strong>은 감독관이 직접 경고에서 제외한 기기입니다.</p>
+      <p><strong>확인 필요</strong>는 전파가 잡혔지만 위험 신호가 약한 기기입니다. 전자기기 반입이 금지된 시험에서는 여전히 확인 대상입니다.</p>
+      <p>점수는 관심 제조사(+45), 가까운 거리(+20), 와이파이 대용량 업로드(+40), 10초 이상 지속(+15)을 더한 값입니다. 100점이 최대입니다.</p>
+      <p>아이폰, 에어팟, 갤럭시처럼 널리 쓰이는 제품도 관심 제조사에 포함됩니다. RF만으로 기기 종류를 100% 구분할 수 없으므로, 점수는 사람이 확인할 순서를 정하는 데 사용하세요.</p>
+      <p>이 화면은 단독 증거가 아닙니다. 위험으로 표시된 기기도 주변의 평범한 기기일 수 있으므로 담당자가 직접 확인해야 합니다.</p>
+    </section>
+    <section>
+      <h3>자동 제외는 없습니다</h3>
+      <p>시험 중 모든 전자기기가 금지라는 전제로 동작합니다. 앱이 교실에 있던 기기를 자동으로 ‘기존 기기’라며 빼면, 이미 들어와 있던 부정행위 기기를 놓칠 수 있기 때문입니다.</p>
+      <p>공유기나 감독관 기기처럼 꼭 필요한 기기만 목록에서 <strong>허용</strong>을 눌러 제외하세요. 허용한 기기는 <strong>허용됨</strong>으로 표시되고, 언제든 <strong>허용 취소</strong>로 다시 확인 대상에 넣을 수 있습니다.</p>
+      <p>블루투스 기기 ID는 운영체제에 따라 임시 UUID이거나 하드웨어 주소입니다. 기기나 재부팅 상태에 따라 바뀔 수 있으므로, 허용한 기기가 다시 나타나면 한 번 더 허용해야 할 수 있습니다.</p>
+    </section>
+    <section>
+      <h3>테스트 신호</h3>
+      <p>실제 스마트 안경 없이 화면과 판정을 시험하는 기능입니다. <strong>테스트</strong>라고 표시된 기기는 실제 기기가 아니므로 증거로 사용하면 안 됩니다. 아래 버튼은 이 도움말 창을 닫고 테스트 신호를 넣습니다.</p>
+    </section>
+    <section>
+      <h3>와이파이 감지</h3>
+      <p>와이파이 모니터 모드는 관리자 권한이 필요합니다. macOS/Linux는 <code>sudo .venv/bin/python main.py</code>, Windows는 관리자 PowerShell에서 <code>.venv\Scripts\python.exe main.py</code>로 실행하세요.</p>
+      <p>Windows는 Npcap의 802.11 모니터 모드 지원과 모니터 모드를 지원하는 어댑터가 필요합니다. 모니터 모드 동안에는 Wi-Fi 인터넷 연결이 끊길 수 있으며, 대시보드는 <code>127.0.0.1</code>에서 계속 열립니다.</p>
+    </section>
+    <section>
+      <h3>숫자 읽기</h3>
+      <p>dBm은 신호 세기입니다. 0에 가까울수록 강한 신호입니다. 거리는 신호 세기로 계산한 어림값이라 벽, 사람, 가방에 따라 달라질 수 있습니다.</p>
+    </section>
+    <section>
+      <h3>개인정보</h3>
+      <p>무선 신호의 내용(사진, 메시지 등)은 저장하지 않습니다. 기기 이름, 제조사, 신호 세기 같은 겉정보만 이 컴퓨터의 메모리에 보관하며 외부로 보내지 않습니다.</p>
+    </section>
+    <p class="dialog-note">기술적인 원시 값이 필요하면 활동 기록에서 <strong>자세히</strong>를 켜세요.</p>
+  </div>
+  <div class="dialog-foot">
+    <button class="btn" id="btn-simulate" type="button">테스트 신호 넣기</button>
+    <button class="btn" id="btn-help-close-bottom" type="button">닫기</button>
+  </div>
+</dialog>
+
+<script>
+(() => {
+  "use strict";
+
+  const S = {
+    snapshot: null,
+    events: [],
+    seen: new Set(),
+    offset: 0,
+    expanded: new Set(),
+    filter: "all",
+    showAllowed: true,
+    showRaw: false,
+    ws: null,
+    connected: false,
+    reconnectDelay: 1000,
+    reconnectTimer: null,
+    pingTimer: null,
+    actionTimer: null,
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[ch]));
+  const num = (v, fallback = 0) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
+  const fixed = (v, digits = 1) => num(v).toFixed(digits);
+  const titleCase = (value) => String(value ?? "").toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
+
+  const isAllowed = (device) => Boolean(device && (device.allowed === true || (device.allowed === undefined && device.whitelisted)));
+  const STATUS_LABELS = {
+    CRITICAL: "위험",
+    SUSPICIOUS: "의심",
+    WATCH: "관찰",
+    CLEAR: "확인 필요",
+    ALLOWED: "허용됨",
+    BASELINE: "허용됨",
+  };
+  const LEVEL_LABELS = { CRITICAL: "위험", WARN: "주의", INFO: "정보", OK: "완료" };
+  const FACTOR_LABELS = {
+    VENDOR_MATCH: "관심 제조사",
+    NEAR_FIELD: "가까운 거리",
+    UPLINK_BURST: "대용량 업로드",
+    PERSISTENCE: "10초 이상 지속",
+  };
+  const VENDOR_KO = {
+    "Meta Platforms": "메타",
+    "Qualcomm": "퀄컴",
+    "Bestechnic (BES)": "베스트테크닉",
+    "Actions Semiconductor": "액션스",
+    "Apple": "애플",
+    "Google": "구글",
+    "Samsung": "삼성",
+    "Espressif": "에스프레시프",
+    "Xiaomi": "샤오미",
+    "LOCAL / RANDOMIZED": "무작위 주소",
+    "UNKNOWN": "알 수 없음",
+  };
+  const DEVICE_NAME_KO = {
+    "Unknown BLE peripheral": "이름 없는 블루투스 기기",
+    "802.11 station": "와이파이 기기",
+    "Unknown device": "이름 없는 기기",
+  };
+
+  function stateClass(status) {
+    const s = String(status || "").toLowerCase();
+    if (s === "critical") return "critical";
+    if (s === "suspicious") return "suspicious";
+    if (s === "watch") return "watch";
+    if (s === "allowed" || s === "baseline") return "allowed";
+    return "clear";
+  }
+
+  function fmtDuration(total) {
+    const s = Math.max(0, Math.floor(num(total)));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  }
+
+  function fmtTimestamp(epoch) {
+    if (!epoch) return "—";
+    const d = new Date(epoch * 1000);
+    return `${d.toLocaleTimeString("en-GB", { hour12: false })}.${String(d.getMilliseconds()).padStart(3, "0")}`;
+  }
+
+  function fmtAgoKo(seconds) {
+    const s = Math.max(0, num(seconds));
+    if (s < 10) return `${s.toFixed(1)}초 전`;
+    if (s < 60) return `${Math.round(s)}초 전`;
+    const m = Math.floor(s / 60);
+    const rest = Math.round(s % 60);
+    if (m < 60) return rest ? `${m}분 ${rest}초 전` : `${m}분 전`;
+    const h = Math.floor(m / 60);
+    return `${h}시간 ${m % 60}분 전`;
+  }
+
+  function signalKo(rssi) {
+    if (rssi === null || rssi === undefined) return "—";
+    const value = num(rssi, -999);
+    if (value >= -55) return "매우 강함";
+    if (value >= -67) return "강함";
+    if (value >= -78) return "보통";
+    if (value >= -86) return "약함";
+    return "매우 약함";
+  }
+
+  function distanceKo(meters) {
+    if (meters === null || meters === undefined) return "계산 안 됨";
+    const m = Math.max(0, num(meters));
+    if (m < 1) return `약 ${Math.max(1, Math.round(m * 100))} cm`;
+    return `약 ${m.toFixed(1)} m`;
+  }
+
+  function vendorKo(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "알 수 없음";
+    if (VENDOR_KO[raw]) return VENDOR_KO[raw];
+    if (raw.startsWith("LOCAL")) return "무작위 주소";
+    return raw;
+  }
+
+  function deviceKo(device) {
+    const raw = String(device && device.name || "").trim();
+    if (DEVICE_NAME_KO[raw]) return DEVICE_NAME_KO[raw];
+    if (raw) return raw;
+    const identifier = String(device && device.identifier || "");
+    if (identifier.length > 20) return `${identifier.slice(0, 8)}…${identifier.slice(-4)}`;
+    if (identifier) return identifier;
+    return device && device.kind === "WIFI" ? "와이파이 기기" : "블루투스 기기";
+  }
+
+  function shortMac(value) {
+    const text = String(value || "");
+    const parts = text.split(":");
+    if (parts.length !== 6) return text || "주소 미확인";
+    return `${parts[0]}:${parts[1]}…:${parts[4]}:${parts[5]}`;
+  }
+
+  function formatBytes(value) {
+    const n = Math.max(0, num(value));
+    if (n < 1024) return `${n.toLocaleString("ko-KR")} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function setAction(text) {
+    const el = $("action-note");
+    if (!el) return;
+    el.textContent = text || "";
+    el.title = text || "";
+    if (S.actionTimer) clearTimeout(S.actionTimer);
+    if (text) S.actionTimer = setTimeout(() => { el.textContent = ""; el.title = ""; }, 5000);
+  }
+
+  function setLink(connected, label) {
+    S.connected = connected;
+    const el = $("link-text");
+    if (!el) return;
+    el.textContent = connected ? "연결됨" : (label || "연결 끊김");
+    el.classList.toggle("muted", !connected);
+  }
+
+  function startPing() {
+    stopPing();
+    S.pingTimer = setInterval(() => {
+      if (S.ws && S.ws.readyState === WebSocket.OPEN) {
+        try { S.ws.send("ping"); } catch (_) {}
+      }
+    }, 20000);
+  }
+  function stopPing() {
+    if (S.pingTimer) { clearInterval(S.pingTimer); S.pingTimer = null; }
+  }
+
+  function connect() {
+    setLink(false, "연결 중");
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    let ws;
+    try { ws = new WebSocket(`${proto}://${location.host}/ws`); }
+    catch (_) { scheduleReconnect(); return; }
+    S.ws = ws;
+
+    ws.onopen = () => {
+      S.reconnectDelay = 1000;
+      setLink(true);
+      startPing();
+      fetchState();
+    };
+    ws.onmessage = (event) => {
+      let message;
+      try { message = JSON.parse(event.data); } catch (_) { return; }
+      if (message.type === "hello") {
+        if (message.state) applySnapshot(message.state);
+        setEvents(message.events || [], true);
+      } else if (message.type === "state" && message.state) {
+        applySnapshot(message.state);
+      } else if (message.type === "events") {
+        addEvents(message.events || []);
+      }
+    };
+    ws.onclose = () => {
+      setLink(false, "연결 끊김");
+      stopPing();
+      scheduleReconnect();
+    };
+    ws.onerror = () => { try { ws.close(); } catch (_) {} };
+  }
+
+  function scheduleReconnect() {
+    if (S.reconnectTimer) clearTimeout(S.reconnectTimer);
+    S.reconnectTimer = setTimeout(() => {
+      S.reconnectTimer = null;
+      connect();
+    }, S.reconnectDelay);
+    S.reconnectDelay = Math.min(15000, Math.max(1000, S.reconnectDelay * 1.7));
+  }
+
+  async function fetchState() {
+    try {
+      const response = await fetch("/api/state", { cache: "no-store" });
+      if (!response.ok) return;
+      applySnapshot(await response.json());
+    } catch (_) { /* reconnect loop handles it */ }
+  }
+
+  function applySnapshot(next) {
+    S.snapshot = next;
+    S.offset = num(next.server_time, Date.now() / 1000) - Date.now() / 1000;
+    renderAll();
+  }
+
+  // ── events ───────────────────────────────────────────────────────────────
+
+  function setEvents(list, replace) {
+    if (replace) {
+      S.events = [];
+      S.seen.clear();
+    }
+    addEvents(list);
+  }
+
+  function addEvents(list) {
+    let changed = false;
+    for (const event of list) {
+      if (!event || event.id == null) continue;
+      if (event.code === "STATE_RESET") {
+        S.events = [];
+        S.seen.clear();
+      }
+      if (S.seen.has(event.id)) continue;
+      S.seen.add(event.id);
+      S.events.push(event);
+      changed = true;
+    }
+    if (!changed) return;
+    S.events.sort((a, b) => b.id - a.id);
+    if (S.events.length > 320) S.events.length = 320;
+    renderEvents();
+  }
+
+  function eventData(data) {
+    if (!data || typeof data !== "object") return "";
+    const skip = new Set([
+      "factors", "service_uuids", "simulated", "device", "identifier",
+      "addr2", "bssid",
+    ]);
+    const parts = [];
+    for (const key of Object.keys(data)) {
+      if (skip.has(key)) continue;
+      const value = data[key];
+      if (value === null || value === undefined || typeof value === "object") continue;
+      let text = String(value);
+      if (text.length > 44) text = `${text.slice(0, 41)}…`;
+      parts.push(`${key}=${text}`);
+      if (parts.length >= 5) break;
+    }
+    return parts.join(" · ");
+  }
+
+  function sourceLabel(source) {
+    if (source === "WIFI") return "와이파이";
+    if (source === "SYS") return "시스템";
+    if (source === "SIM") return "테스트";
+    if (source === "BLE") return "블루투스";
+    return source || "시스템";
+  }
+
+  function eventMessage(event) {
+    const d = event.data || {};
+    switch (event.code) {
+      case "LEARNING_START":
+        return `기준 학습을 시작했습니다. ${num(d.duration_s, 30).toFixed(0)}초 동안 교실에 원래 있던 기기를 먼저 익힙니다.`;
+      case "LEARNING_DISABLED":
+        return "기준 학습이 꺼져 있습니다.";
+      case "BASELINE_LOCKED":
+        return `기준 학습이 끝났습니다. 블루투스 ${num(d.ble)}대, 와이파이 ${num(d.wifi)}대, 와이파이 이름 ${num(d.ssid)}개를 경고 대상에서 제외했습니다.`;
+      case "BLE_READY":
+        return "블루투스 감지를 시작했습니다.";
+      case "BLE_DISABLED":
+        return "블루투스 감지가 꺼져 있습니다.";
+      case "BLE_ERROR":
+        return "블루투스 감지를 시작하지 못했습니다. 터미널 앱의 블루투스 권한을 확인해 주세요.";
+      case "BLE_DEVICE_NEW":
+        return `새 블루투스 기기: ${deviceKo(d)} · 신호 ${signalKo(d.rssi)}${d.distance_m != null ? ` · ${distanceKo(d.distance_m)}` : ""}.`;
+      case "BLE_VENDOR_MATCH":
+        return `관심 제조사 신호: ${vendorKo(d.vendor)}${d.name ? ` · ${deviceKo(d)}` : ""} · 신호 ${d.rssi_filtered == null ? "—" : `${fixed(d.rssi_filtered, 1)} dBm`}${d.distance_m != null ? ` · ${distanceKo(d.distance_m)}` : ""}.`;
+      case "WIFI_UPLINK_SENDER":
+        return `와이파이로 큰 데이터를 보내는 기기: ${shortMac(d.addr2)} · ${formatBytes(d.frame_len)}.`;
+      case "UPLINK_BURST":
+        return `대용량 업로드 감지: 와이파이 기기 ${shortMac(d.addr2)} · ${num(d.window_s).toFixed(0)}초에 ${num(d.frames)}개 · ${formatBytes(d.bytes)}.`;
+      case "THREAT_CRITICAL":
+        return `위험: ${deviceKo(d)} · ${num(d.score)}점. 목록 맨 위에 고정했습니다.`;
+      case "THREAT_ESCALATED":
+        return `의심: ${deviceKo(d)} · ${num(d.score)}점.`;
+      case "THREAT_DOWNGRADED":
+        return `위험도가 낮아졌습니다: ${deviceKo(d)} · ${num(d.score)}점.`;
+      case "DEVICE_EXPIRED":
+        return `신호가 끊겨 목록에서 제외했습니다: ${deviceKo(d)}.`;
+      case "WIFI_MONITOR_READY":
+        return "와이파이 감지를 시작했습니다.";
+      case "WIFI_STARTING":
+        return "와이파이 감지를 준비하고 있습니다.";
+      case "WIFI_ERROR":
+        return "와이파이 감지를 시작하지 못했습니다.";
+      case "WIFI_UNAVAILABLE":
+        return "와이파이 감지를 사용할 수 없습니다. 블루투스만으로 계속합니다.";
+      case "WIFI_DISABLED":
+        return "와이파이 감지가 꺼져 있습니다.";
+      case "NEW_SSID":
+        return `새 와이파이 이름: ${d.ssid || "이름 없음"}.`;
+      case "SIM_MODE":
+        return "테스트 화면입니다. 실제 신호 대신 시험용 신호를 사용합니다.";
+      case "SIM_INJECT":
+        return `테스트 신호를 넣었습니다: 블루투스 ${num(d.ble_samples)}개, 와이파이 ${num(d.wifi_frames)}개.`;
+      case "SIM_ERROR":
+        return "테스트 신호를 넣지 못했습니다.";
+      case "SIM_FALLBACK":
+        return "실제 무선 신호를 잡지 못해 테스트 화면으로 전환했습니다.";
+      case "POLICY_MODE":
+        return "자동 제외 기능은 사용하지 않습니다. 감독관이 직접 허용한 기기만 경고에서 제외합니다.";
+      case "DEVICE_ALLOWED":
+        return `${deviceKo(d)} 기기를 허용했습니다. 이 기기는 경고에서 제외됩니다.`;
+      case "DEVICE_UNALLOWED":
+        return `${deviceKo(d)} 기기를 다시 확인 대상으로 바꿨습니다.`;
+      case "STATE_RESET":
+        return "감지 결과와 허용된 기기 목록을 모두 지웠습니다.";
+      case "BLE_CALLBACK_ERROR":
+        return "블루투스 신호 하나를 읽지 못했습니다.";
+      case "WS_ERROR":
+        return "화면 연결에 문제가 생겼습니다.";
+      default:
+        return event.message || event.code || "새 활동이 기록되었습니다.";
+    }
+  }
+
+  function renderEvents() {
+    const stream = $("event-stream");
+    const empty = $("event-empty");
+    $("event-count").textContent = String(S.events.length);
+    empty.classList.toggle("hidden", S.events.length > 0);
+    stream.classList.toggle("hidden", S.events.length === 0);
+
+    const atTop = stream.scrollTop <= 4;
+    const oldHeight = stream.scrollHeight;
+
+    stream.innerHTML = S.events.map((event) => {
+      const level = String(event.level || "INFO").toUpperCase();
+      const cls = level === "CRITICAL" ? "critical" : "";
+      const message = eventMessage(event);
+      const data = S.showRaw ? eventData(event.data) : "";
+      return `<div class="event ${cls}" data-id="${num(event.id)}">
+        <time class="event-time">${esc(event.time || "")}</time>
+        <div class="event-body">
+          <div class="event-line">
+            <span class="event-level ${cls}">${esc(LEVEL_LABELS[level] || titleCase(level))}</span>
+            <span class="event-source">${esc(sourceLabel(event.source))}</span>
+            <span class="event-message">${esc(message)}</span>
+          </div>
+          ${data ? `<div class="event-detail">${esc(data)}</div>` : ""}
+        </div>
+      </div>`;
+    }).join("");
+
+    if (!atTop) stream.scrollTop += stream.scrollHeight - oldHeight;
+  }
+
+  // ── rendering ────────────────────────────────────────────────────────────
+
+  function renderAll() {
+    if (!S.snapshot) return;
+    renderStatus();
+    renderNotice();
+    renderDevices();
+    renderFooter();
+    renderTitle();
+  }
+
+  function bleLabel(ble) {
+    if (!ble) return "블루투스 준비 중";
+    const state = String(ble.state || "");
+    if (state === "scanning") return "블루투스 감지 중";
+    if (state === "starting") return "블루투스 준비 중";
+    if (state === "error") return "블루투스 오류";
+    if (state === "disabled") return "블루투스 꺼짐";
+    return `블루투스 ${state || "상태 확인 중"}`;
+  }
+
+  function wifiLabel(wifi) {
+    if (!wifi) return "와이파이 준비 중";
+    const state = String(wifi.state || "");
+    if (state === "monitor") {
+      return num(wifi.frames) > 0 ? "와이파이 감지 중" : "와이파이 감지 중 · 신호 없음";
+    }
+    if (state === "starting") return "와이파이 준비 중";
+    if (state === "error" || state === "unavailable") return "와이파이 사용 불가";
+    if (state === "disabled") return "와이파이 꺼짐";
+    return `와이파이 ${state || "상태 확인 중"}`;
+  }
+
+  function renderStatus() {
+    const s = S.snapshot;
+    const stats = s.stats || {};
+    const sim = s.simulation || {};
+    const scanners = s.scanners || {};
+    const ble = scanners.ble || {};
+    const wifi = scanners.wifi || {};
+
+    const bleEl = $("status-ble");
+    bleEl.textContent = bleLabel(ble);
+    bleEl.title = ble.error || "";
+
+    const wifiEl = $("status-wifi");
+    wifiEl.textContent = wifiLabel(wifi);
+    wifiEl.title = wifi.error || `${num(wifi.frames)}개 802.11 프레임 수신${wifi.root ? "" : " · 관리자 권한 없음"}`;
+
+    $("status-devices").textContent = `확인 대상 ${num(stats.active_devices)}대`;
+    $("status-allowed").textContent = `허용 ${num(stats.allowed_devices)}대`;
+
+    const critical = num(stats.critical);
+    const criticalEl = $("status-critical");
+    criticalEl.textContent = `위험 ${critical}대`;
+    criticalEl.classList.toggle("critical", critical > 0);
+
+    const simActive = ["cli", "fallback", "manual"].includes(String(sim.mode || ""));
+    $("status-sim").classList.toggle("hidden", !simActive);
+  }
+
+  function renderNotice() {
+    const warnings = S.snapshot.system && Array.isArray(S.snapshot.system.warnings)
+      ? S.snapshot.system.warnings
+      : [];
+    const notice = $("notice");
+    notice.classList.toggle("hidden", warnings.length === 0);
+    $("notice-text").textContent = warnings.join(" ");
+  }
+
+  function renderFooter() {
+    const s = S.snapshot;
+    $("footer-right").textContent = `v${s.version || ""} · 사용 ${fmtDuration(s.uptime_s)}`;
+  }
+
+  function renderTitle() {
+    const critical = num((S.snapshot.stats || {}).critical);
+    document.title = critical > 0
+      ? `위험 ${critical}대 · RoomWatch`
+      : "RoomWatch — 교실 무선기기 모니터";
+  }
+
+  function factorText(device) {
+    const factors = Array.isArray(device.factors) ? device.factors : [];
+    if (!factors.length) return "없음";
+    return factors.map((factor) => {
+      const label = FACTOR_LABELS[factor.code] || titleCase(String(factor.code || "").replace(/_/g, " "));
+      return `${label} +${num(factor.points)}`;
+    }).join(" · ");
+  }
+
+  function detailRow(device) {
+    const allowed = isAllowed(device);
+    const services = Array.isArray(device.service_uuids) && device.service_uuids.length
+      ? device.service_uuids.map((uuid) => esc(uuid)).join("<br>")
+      : "없음";
+    const burst = device.burst || {};
+    const txUsed = num(device.tx_power_used_dbm, -59);
+    const txAdvertised = device.tx_power_dbm != null;
+    const delta = device.rssi_delta == null
+      ? "—"
+      : `${device.rssi_delta > 0 ? "+" : ""}${fixed(device.rssi_delta, 1)} dB`;
+    const distance = device.distance_m == null ? "계산 안 함" : distanceKo(device.distance_m);
+    const bleIdentifier = String((((S.snapshot || {}).scanners || {}).ble || {}).identifier || "");
+    const idNote = device.kind === "BLE"
+      ? (bleIdentifier.startsWith("UUID")
+          ? "이 컴퓨터가 붙인 임시 ID입니다. 실제 블루투스 주소가 아닙니다."
+          : "블루투스 기기의 하드웨어 주소입니다. 휴대폰은 개인정보 보호를 위해 무작위 주소를 사용할 수 있습니다.")
+      : "와이파이 기기의 고유 주소입니다. 휴대폰은 개인정보 보호를 위해 무작위 주소를 사용할 수 있습니다.";
+    const advText = device.adv_bytes == null
+      ? "광고 데이터 크기는 확인되지 않았습니다."
+      : `광고 데이터는 약 ${num(device.adv_bytes)}바이트입니다.`;
+    const radio = device.kind === "BLE"
+      ? `신호 ${device.rssi_filtered == null ? "—" : `${fixed(device.rssi_filtered, 1)} dBm`} (${signalKo(device.rssi_filtered)}), ${distance}. ${advText} 거리 계산에는 ${fixed(txUsed, 1)} dBm 기준을 사용했습니다. 최근 신호 변화는 ${delta}입니다.`
+      : `신호 ${device.rssi_filtered == null ? "—" : `${fixed(device.rssi_filtered, 1)} dBm`} (${signalKo(device.rssi_filtered)}). 마지막 프레임은 ${device.last_frame_len == null ? "—" : `${num(device.last_frame_len).toLocaleString("ko-KR")}바이트`}입니다. 최근 신호 변화는 ${delta}입니다. 화면의 신호는 평활값이고, 위험 판정은 원래 신호 세기로 합니다.`;
+    const burstText = device.kind === "WIFI"
+      ? `${num(burst.count)}회 감지, 현재 ${num(burst.frames)}개 프레임, ${formatBytes(burst.bytes)}, 초당 ${fixed(burst.rate_fps, 1)}개.`
+      : "블루투스 기기에는 해당하지 않습니다.";
+
+    return `<tr class="detail-row"><td colspan="8"><div class="detail">
+      <div>
+        <div class="detail-label">기기 ID</div>
+        <div class="detail-value mono">${esc(device.identifier)}</div>
+        <div class="detail-value muted" style="margin-top:3px">${esc(idNote)}</div>
+        <div class="detail-actions">
+          <button class="copy-link" type="button" data-copy="${esc(device.identifier)}">기기 ID 복사</button>
+          <button class="copy-link" type="button" data-allow-key="${esc(device.key)}" data-allow="${allowed ? "false" : "true"}" title="${allowed ? "이 기기를 다시 확인 대상으로 되돌립니다" : "이 기기를 경고에서 제외합니다. 감독관 기기나 공유기에만 사용하세요."}">${allowed ? "허용 취소" : "이 기기 허용"}</button>
+        </div>
+      </div>
+      <div>
+        <div class="detail-label">제조사</div>
+        <div class="detail-value">${esc(vendorKo(device.company_label || device.vendor))}${device.company_id ? ` · ${esc(device.company_id)}` : ""}</div>
+        <div class="detail-label" style="margin-top:5px">서비스 정보</div>
+        <div class="detail-value mono">${services}</div>
+      </div>
+      <div>
+        <div class="detail-label">위험 점수</div>
+        <div class="detail-value">${allowed ? "허용됨 · 경고 제외" : `${esc(STATUS_LABELS[device.status] || titleCase(device.status))} · ${num(device.score)}/100${device.pinned ? " · 상단 고정" : ""}`}</div>
+        <div class="detail-value" style="margin-top:3px">${allowed ? "감독관이 직접 허용한 기기입니다." : esc(factorText(device))}</div>
+      </div>
+      <div>
+        <div class="detail-label">처음 감지</div>
+        <div class="detail-value mono">${esc(fmtTimestamp(device.first_seen))}</div>
+        <div class="detail-label" style="margin-top:5px">최근 감지</div>
+        <div class="detail-value mono">${esc(fmtTimestamp(device.last_seen))} · ${num(device.hits)}회</div>
+      </div>
+      <div>
+        <div class="detail-label">신호와 거리</div>
+        <div class="detail-value">${esc(radio)}</div>
+      </div>
+      <div>
+        <div class="detail-label">대용량 전송</div>
+        <div class="detail-value">${esc(burstText)}</div>
+        <div class="detail-label" style="margin-top:5px">출처</div>
+        <div class="detail-value">${device.simulated ? "테스트 신호입니다. 실제 증거가 아닙니다." : (allowed ? "감독관이 직접 허용한 기기입니다." : "실제로 들은 신호입니다.")}</div>
+      </div>
+    </div></td></tr>`;
+  }
+
+  function renderDevices() {
+    if (!S.snapshot) return;
+    const all = Array.isArray(S.snapshot.devices) ? S.snapshot.devices : [];
+    const now = Date.now() / 1000 + S.offset;
+    const allowedPresent = all.some((d) => isAllowed(d));
+    let list = all.filter((d) => S.showAllowed || !isAllowed(d));
+    if (S.filter === "ble") list = list.filter((d) => d.kind === "BLE");
+    else if (S.filter === "wifi") list = list.filter((d) => d.kind === "WIFI");
+    else if (S.filter === "threats") list = list.filter((d) => !isAllowed(d) && num(d.score) >= 20);
+
+    $("device-count").textContent = String(list.length);
+    const empty = $("device-empty");
+    empty.classList.toggle("hidden", list.length > 0);
+    $("device-table-wrap").classList.toggle("hidden", list.length === 0);
+
+    if (list.length === 0) {
+      if (!S.showAllowed && allowedPresent) {
+        empty.textContent = "허용된 기기가 숨겨져 있습니다. '허용된 기기 표시'를 켜면 볼 수 있습니다.";
+      } else {
+        empty.textContent = "아직 감지된 기기가 없습니다.";
+      }
+    }
+
+    const tbody = $("device-rows");
+    tbody.innerHTML = list.map((d) => {
+      const allowed = isAllowed(d);
+      const status = String(d.status || "CLEAR");
+      const cls = stateClass(allowed ? "ALLOWED" : status);
+      const critical = !allowed && status === "CRITICAL";
+      const expanded = S.expanded.has(d.key);
+      const statusText = allowed ? "허용됨" : (STATUS_LABELS[status] || titleCase(status));
+      const statusNote = !allowed && d.pinned ? "상단 고정" : "";
+
+      let vendorMain = "알 수 없음";
+      let vendorSub = "제조사 미확인";
+      if (d.kind === "WIFI") {
+        const local = String(d.vendor || "").startsWith("LOCAL");
+        vendorMain = local ? "무작위 주소" : vendorKo(d.vendor);
+        vendorSub = local ? "개인정보 보호용" : "제조사 확인됨";
+      } else if (d.company_label) {
+        vendorMain = vendorKo(d.company_label);
+        vendorSub = "제조사 확인됨";
+      } else if (d.company_id) {
+        vendorMain = "알 수 없음";
+        vendorSub = "제조사 미확인";
+      }
+
+      const signal = signalKo(d.rssi_filtered);
+      const signalSub = d.rssi_raw == null ? "신호 없음" : `${fixed(d.rssi_raw, 1)} dBm`;
+      const distance = d.distance_m == null ? "—" : distanceKo(d.distance_m);
+      const score = allowed ? "—" : String(num(d.score));
+      const factors = Array.isArray(d.factors) ? d.factors.length : 0;
+      const ago = fmtAgoKo(now - num(d.last_seen, now));
+      const kind = d.kind === "WIFI" ? "와이파이" : "블루투스";
+      const test = d.simulated ? '<span class="test-label">테스트</span>' : "";
+      const idText = `ID ${d.short_id || d.identifier}`;
+      const allowAction = allowed ? "false" : "true";
+      const allowLabel = allowed ? "허용 취소" : "허용";
+
+      return `<tr class="device-row" data-key="${esc(d.key)}" aria-expanded="${expanded}">
+        <td>
+          <div class="status-cell ${cls}">${esc(statusText)}</div>
+          ${statusNote ? `<div class="status-note">${esc(statusNote)}</div>` : ""}
+        </td>
+        <td>
+          <div class="device-name" title="${esc(d.name)}">${esc(deviceKo(d))}${test}</div>
+          <div class="device-sub">
+            <span class="device-id-text" title="${esc(d.identifier)}">${esc(idText)}</span>
+            <button class="copy-link" type="button" data-allow-key="${esc(d.key)}" data-allow="${allowAction}" title="${allowed ? "이 기기를 다시 확인 대상으로 되돌립니다" : "이 기기를 경고에서 제외합니다. 감독관 기기나 공유기에만 사용하세요."}">${allowLabel}</button>
+          </div>
+          <div class="mobile-meta">
+            <span>${kind}</span>
+            <span>${esc(vendorMain)}</span>
+            <span>${esc(signal)}</span>
+            <span>${esc(distance)}</span>
+            <span>${allowed ? "허용됨" : `점수 <span class="score ${critical ? "critical" : ""}">${score}</span>`}</span>
+            <span>${ago}</span>
+          </div>
+        </td>
+        <td><span class="type">${kind}</span></td>
+        <td>
+          <span class="cell-main sans">${esc(vendorMain)}</span>
+          <span class="cell-sub">${esc(vendorSub)}</span>
+        </td>
+        <td>
+          <span class="cell-main sans">${esc(signal)}</span>
+          <span class="cell-sub">${esc(signalSub)}</span>
+        </td>
+        <td><span class="cell-main">${esc(distance)}</span></td>
+        <td>
+          <span class="score ${critical ? "critical" : ""}">${score}</span>
+          <span class="score-sub">${allowed ? "경고 제외" : (num(d.score) === 0 ? "위험 신호 없음" : `요인 ${factors}개`)}</span>
+        </td>
+        <td><span class="cell-main">${ago}</span></td>
+      </tr>${expanded ? detailRow(d) : ""}`;
+    }).join("");
+  }
+
+  // ── actions ──────────────────────────────────────────────────────────────
+
+  async function postAction(url, pending, success) {
+    setAction(pending);
+    try {
+      const response = await fetch(url, { method: "POST" });
+      let data = {};
+      try { data = await response.json(); } catch (_) {}
+      if (!response.ok) throw new Error("request failed");
+      if (data.state) applySnapshot(data.state);
+      if (data.injected) {
+        setAction(`테스트 신호를 넣었습니다: 블루투스 ${num(data.injected.ble_samples)}개, 와이파이 ${num(data.injected.wifi_frames)}개`);
+      } else {
+        setAction(success);
+      }
+    } catch (_) {
+      setAction("요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+  }
+
+  async function toggleAllowed(key, allowed) {
+    if (!key) return;
+    if (allowed && !window.confirm("이 기기를 경고에서 제외할까요?\n\n공유기나 감독관 기기처럼 허용된 기기만 선택하세요. 허용한 기기는 경고에 표시되지 않습니다.")) return;
+    setAction(allowed ? "기기를 허용하는 중…" : "허용을 취소하는 중…");
+    try {
+      const response = await fetch("/api/devices/allow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, allowed }),
+      });
+      let data = {};
+      try { data = await response.json(); } catch (_) {}
+      if (!response.ok) throw new Error("request failed");
+      if (data.state) applySnapshot(data.state);
+      setAction(allowed ? "기기를 허용했습니다" : "다시 확인 대상으로 바꿨습니다");
+    } catch (_) {
+      setAction("기기 상태를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
+  }
+
+  function setTheme(theme) {
+    const dark = theme === "dark";
+    document.documentElement.classList.toggle("dark", dark);
+    localStorage.setItem("roomwatch-theme", dark ? "dark" : "light");
+    const button = $("theme-btn");
+    button.textContent = dark ? "밝게" : "어둡게";
+    button.setAttribute("aria-pressed", dark ? "true" : "false");
+  }
+
+  function bindControls() {
+    $("btn-simulate").addEventListener("click", () => {
+      postAction("/api/simulate", "테스트 신호를 넣는 중…", "테스트 신호를 넣었습니다");
+      $("help-dialog").close();
+    });
+    $("btn-reset").addEventListener("click", () => {
+      if (!window.confirm("감지 결과, 점수, 허용된 기기 목록을 모두 지울까요?")) return;
+      postAction("/api/reset", "초기화하는 중…", "감지 결과를 지웠습니다");
+    });
+    $("btn-clear-view").addEventListener("click", () => {
+      S.events = [];
+      renderEvents();
+      setAction("활동 기록을 지웠습니다");
+    });
+    $("theme-btn").addEventListener("click", () => {
+      setTheme(document.documentElement.classList.contains("dark") ? "light" : "dark");
+    });
+    $("btn-help").addEventListener("click", () => {
+      $("help-dialog").showModal();
+    });
+    $("btn-help-close").addEventListener("click", () => {
+      $("help-dialog").close();
+    });
+    $("btn-help-close-bottom").addEventListener("click", () => {
+      $("help-dialog").close();
+    });
+    $("help-dialog").addEventListener("click", (event) => {
+      if (event.target === event.currentTarget) event.currentTarget.close();
+    });
+    $("show-raw").addEventListener("change", (event) => {
+      S.showRaw = Boolean(event.target.checked);
+      renderEvents();
+    });
+
+    document.querySelectorAll("[data-filter]").forEach((button) => {
+      button.addEventListener("click", () => {
+        S.filter = button.getAttribute("data-filter") || "all";
+        document.querySelectorAll("[data-filter]").forEach((other) => {
+          const active = other === button;
+          other.classList.toggle("active", active);
+          other.setAttribute("aria-pressed", active ? "true" : "false");
+        });
+        renderDevices();
+      });
+    });
+
+    $("show-allowed").addEventListener("change", (event) => {
+      S.showAllowed = Boolean(event.target.checked);
+      renderDevices();
+    });
+
+    $("device-rows").addEventListener("click", (event) => {
+      const allow = event.target.closest("[data-allow-key]");
+      if (allow) {
+        event.stopPropagation();
+        toggleAllowed(allow.getAttribute("data-allow-key") || "", allow.getAttribute("data-allow") === "true");
+        return;
+      }
+      const copy = event.target.closest("[data-copy]");
+      if (copy) {
+        event.stopPropagation();
+        const value = copy.getAttribute("data-copy") || "";
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(value).then(
+            () => setAction("기기 ID를 복사했습니다"),
+            () => setAction("복사하지 못했습니다. ID를 직접 선택해 주세요.")
+          );
+        } else {
+          setAction("이 브라우저에서는 복사를 사용할 수 없습니다.");
+        }
+        return;
+      }
+      const row = event.target.closest("tr[data-key]");
+      if (!row) return;
+      const key = row.getAttribute("data-key");
+      if (!key) return;
+      if (S.expanded.has(key)) S.expanded.delete(key);
+      else S.expanded.add(key);
+      renderDevices();
+    });
+  }
+
+  function boot() {
+    setTheme(localStorage.getItem("roomwatch-theme") === "dark" ? "dark" : "light");
+    bindControls();
+    setLink(false, "연결 중");
+    fetchState();
+    connect();
+
+    const updateClock = () => {
+      $("clock").textContent = new Date().toLocaleTimeString("en-GB", { hour12: false });
+    };
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    setInterval(() => {
+      if (!S.connected) fetchState();
+    }, 3000);
+
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && (!S.ws || S.ws.readyState === WebSocket.CLOSED)) {
+        fetchState();
+        connect();
+      }
+    });
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
