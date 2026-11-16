@@ -9,6 +9,8 @@
 
 ![RoomWatch dashboard](docs/screenshot.png)
 
+*테스트 신호를 넣은 화면입니다. 실제 시험장에서는 감지된 기기와 위험도가 표시됩니다.*
+
 도움말 화면은 [docs/help.png](docs/help.png)에서 볼 수 있습니다.
 
 ---

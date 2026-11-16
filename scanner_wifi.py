@@ -117,10 +117,15 @@ def _linux_monitor(iface: str, enable: bool) -> None:
         except PcapStreamError:
             info = ""
         if "type monitor" not in info:
+            try:
+                _run_checked([ip, "link", "set", iface, "down"], timeout=5.0)
+            except PcapStreamError:
+                pass
             _run_checked([iw, "dev", iface, "set", "type", "monitor"])
         _run_checked([ip, "link", "set", iface, "up"])
     else:
         try:
+            _run_checked([ip, "link", "set", iface, "down"], timeout=8.0)
             _run_checked([iw, "dev", iface, "set", "type", "managed"], timeout=8.0)
             _run_checked([ip, "link", "set", iface, "up"], timeout=8.0)
         except PcapStreamError:
